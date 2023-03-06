@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "photos"
+version = "0.1.0"
+description = ""
+authors = ["sergey_klimov <s.klimov@bk.ru>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+argparse = "^1.4.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
