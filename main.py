@@ -1,15 +1,17 @@
+import asyncio
 import logging
-from subprocess import Popen, PIPE
 
 import subprocess
 
 import argparse
 
 
+BATCH_SIZE = 512_000  # размер порции для отдачи файла в байтах
+
 logging.basicConfig(encoding="utf-8", level=logging.DEBUG)
 
 
-def main(paths: list[str], save: str | None) -> bytes:
+async def main(paths: list[str], save: str | None) -> None:
     """Создаёт архив и помещает его содержимое в переменную archive
 
     Ключевые аргументы:
@@ -20,15 +22,34 @@ def main(paths: list[str], save: str | None) -> bytes:
     process = subprocess.check_output("pwd")
     logging.info("текущая папка %s", (process, ))
 
-    process = Popen(["zip", "-r", "-", *paths], stdout=PIPE, stderr=None)
-    archive, _ = process.communicate()
-    logging.info("размер архива %.f байт" % (len(archive), ))
+    cmd = " ".join(["zip", "-r", "-", *paths])
 
-    if save is not None:
-        with open(save, "wb") as fh:
+    proc = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    if save is None:
+        return
+
+    counter = 1
+    archive_size = 0
+
+    while True:
+        logging.info("проход № %s" % (counter, ))
+        mode = "wb" if counter == 1 else "ab"
+        archive = await proc.stdout.read(BATCH_SIZE)
+        archive_size += len(archive)
+        with open(save, mode) as fh:
             fh.write(archive)
 
-    return archive
+        counter += 1
+
+        if proc.stdout.at_eof():
+            break
+
+    logging.info("размер архива %.f байт" % (archive_size, ))
 
 
 if __name__ == '__main__':
@@ -40,4 +61,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    _ = main(args.paths, args.save)
+    asyncio.run(main(args.paths, args.save))
