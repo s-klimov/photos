@@ -1,5 +1,8 @@
+import logging
+import os.path
+
 import aiofiles
-from aiohttp import web, MultipartWriter
+from aiohttp import web
 import asyncio
 
 from aiohttp.web_request import Request
@@ -9,15 +12,19 @@ PHOTOS_PATH = "test_photos/"
 BATCH_SIZE = 512_000  # размер порции для отдачи файла в байтах
 ARCHIVE_FILE_NAME = "archive.zip"
 
-
-async def handle_index_page(request):
-    async with aiofiles.open('index.html', mode='r') as index_file:
-        index_contents = await index_file.read()
-    return web.Response(text=index_contents, content_type='text/html')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
-async def download_handler(request: Request) -> web.StreamResponse:
+async def archive(request: Request) -> web.StreamResponse:
     """Хендлер формирования архива и скачивания его в файл"""
+
+    archive_hash = request.match_info['archive_hash']
+    folder_path = os.path.join(os.getcwd(), PHOTOS_PATH, archive_hash)
+
+    if not (os.path.exists(folder_path) and os.path.isdir(folder_path)):
+        logger.warning(f'Запрошена несуществующая папка {archive_hash}')
+        raise web.HTTPNotFound(text='Архив не существует или был удален')
 
     response = web.StreamResponse(
         status=200,
@@ -28,9 +35,7 @@ async def download_handler(request: Request) -> web.StreamResponse:
         }
     )
 
-    archive_hash = request.match_info.get('archive_hash')
-
-    cmd = " ".join(["zip", "-rj", "-", PHOTOS_PATH + archive_hash])
+    cmd = f"(cd {os.path.join(PHOTOS_PATH, archive_hash)} && zip -r - .)"
     proc = await asyncio.create_subprocess_shell(
         cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -44,10 +49,7 @@ async def download_handler(request: Request) -> web.StreamResponse:
 
         archive_data = await proc.stdout.read(BATCH_SIZE)
 
-        # Отправляет клиенту очередную порцию файла
-        with MultipartWriter('text/plain') as mpwriter:
-            mpwriter.append(archive_data)
-            await mpwriter.write(response)
+        await response.write(archive_data)
 
         if proc.stdout.at_eof():
             break
@@ -55,10 +57,18 @@ async def download_handler(request: Request) -> web.StreamResponse:
     return response
 
 
+async def handle_index_page(request):
+    """Главная страница проекта"""
+
+    async with aiofiles.open('index.html', mode='r') as index_file:
+        index_contents = await index_file.read()
+    return web.Response(text=index_contents, content_type='text/html')
+
+
 if __name__ == '__main__':
     app = web.Application()
     app.add_routes([
         web.get('/', handle_index_page),
-        web.get('/archive/{archive_hash}/', download_handler),
+        web.get('/archive/{archive_hash}/', archive),
     ])
     web.run_app(app)
