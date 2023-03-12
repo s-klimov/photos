@@ -1,5 +1,6 @@
 import logging
 import os.path
+import sys
 
 import aiofiles
 from aiohttp import web
@@ -7,13 +8,20 @@ import asyncio
 
 from aiohttp.web_request import Request
 
+APP_NAME = "Файловый сервис"
 ARCHIVE_URL = "/archive/"
 PHOTOS_PATH = "test_photos/"
 BATCH_SIZE = 512_000  # размер порции для отдачи файла в байтах
 ARCHIVE_FILE_NAME = "archive.zip"
+INTERVAL_SEC = 1  # временной интервал в секундах для искусственной задержки скачивания файла
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="[%(asctime)s] %(levelname)s %(message)s",
+    datefmt="%d/%b/%Y %H:%M:%S",
+    stream=sys.stdout
+)
+logger = logging.getLogger(APP_NAME)
 
 
 async def archive(request: Request) -> web.StreamResponse:
@@ -46,10 +54,11 @@ async def archive(request: Request) -> web.StreamResponse:
     await response.prepare(request)
 
     while True:
-
+        logger.debug("Sending archive chunk ...")
         archive_data = await proc.stdout.read(BATCH_SIZE)
 
         await response.write(archive_data)
+        await asyncio.sleep(INTERVAL_SEC)
 
         if proc.stdout.at_eof():
             break
