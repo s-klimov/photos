@@ -44,7 +44,7 @@ async def archive(request: Request) -> web.StreamResponse:
     )
 
     cmd = f"(cd {os.path.join(PHOTOS_PATH, archive_hash)} && zip -r - .)"
-    proc = await asyncio.create_subprocess_shell(
+    proc = await asyncio.create_subprocess_exec(
         cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -53,15 +53,19 @@ async def archive(request: Request) -> web.StreamResponse:
     # Отправляет клиенту HTTP заголовки
     await response.prepare(request)
 
-    while True:
-        logger.debug("Sending archive chunk ...")
-        archive_data = await proc.stdout.read(BATCH_SIZE)
+    try:
+        while True:
+            logger.debug("Sending archive chunk ...")
+            archive_data = await proc.stdout.read(BATCH_SIZE)
 
-        await response.write(archive_data)
-        await asyncio.sleep(INTERVAL_SEC)
+            await response.write(archive_data)
+            await asyncio.sleep(INTERVAL_SEC)
 
-        if proc.stdout.at_eof():
-            break
+            if proc.stdout.at_eof():
+                logger.debug("archive file successfully downloaded")
+                break
+    except ConnectionResetError:
+        logger.error("Download was interrupted")
 
     return response
 
